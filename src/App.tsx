@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // Definindo tipos TypeScript
 type ListItem = {
@@ -28,6 +28,35 @@ function App() {
   });
   const [selectedItem, setSelectedItem] = useState<{ list: 'A' | 'B', id: string } | null>(null);
   const [editingItem, setEditingItem] = useState<{ list: 'A' | 'B', id: string, value: string } | null>(null);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const stored = localStorage.getItem('theme');
+    return stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+  const listARef = useRef<HTMLDivElement>(null);
+  const listBRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (listARef.current) {
+      listARef.current.scrollTop = listARef.current.scrollHeight;
+    }
+  }, [listA.length]);
+
+  useEffect(() => {
+    if (listBRef.current) {
+      listBRef.current.scrollTop = listBRef.current.scrollHeight;
+    }
+  }, [listB.length]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+  }, [darkMode]);
 
   // Função para adicionar item na Lista A
   const addItemA = () => {
@@ -201,12 +230,12 @@ function App() {
 
     if (isEditing) {
       return (
-        <div key={item.id} className="flex items-center justify-between py-2 px-3 border-b border-gray-100 last:border-b-0 bg-yellow-50">
+        <div key={item.id} className="flex items-center justify-between py-2 px-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 bg-yellow-50 dark:bg-yellow-900/30">
           <input
             type="text"
             value={editingItem.value}
             onChange={(e) => setEditingItem({ ...editingItem, value: e.target.value })}
-            className="flex-1 px-2 py-1 border border-gray-300 rounded mr-2"
+            className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded mr-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
             autoFocus
           />
           <div className="flex gap-2">
@@ -230,13 +259,13 @@ function App() {
     return (
       <div
         key={item.id}
-        className={`flex items-center justify-between py-2 px-3 border-b border-gray-100 last:border-b-0 cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
+        className={`flex items-center justify-between py-2 px-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
         onClick={() => handleSelectItem(list, item.id)}
       >
         <span className="flex-1">{item.value}</span>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">#{index + 1}</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">#{index + 1}</span>
           {isSelected && (
             <div className="flex gap-1 ml-2">
               <button
@@ -265,13 +294,24 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-center text-gray-900">
+      <header className="bg-white dark:bg-gray-800 shadow-sm">
+        <div className="relative max-w-7xl mx-auto px-4 py-6">
+          <h1 className="text-3xl font-bold text-center text-gray-900 dark:text-gray-100">
             Comparador de Listas
           </h1>
+          <button
+            onClick={() => setDarkMode(prev => !prev)}
+            aria-label={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            title={darkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center whitespace-nowrap p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <span className="flex items-center gap-1.5">
+              <span>{darkMode ? '🌙' : '☀️'}</span>
+              <span>{darkMode ? 'Escuro' : 'Claro'}</span>
+            </span>
+          </button>
         </div>
       </header>
 
@@ -281,8 +321,8 @@ function App() {
         <div className="flex flex-col md:flex-row gap-8 justify-center mb-8">
           {/* Lista A */}
           <div className="flex-1 max-w-md">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold text-center mb-4 text-blue-600">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-center mb-4 text-blue-600 dark:text-blue-400">
                 Lista A ({listA.length} itens)
               </h2>
 
@@ -294,7 +334,7 @@ function App() {
                   onChange={(e) => setNewItemA(e.target.value)}
                   onKeyPress={handleKeyPressA}
                   placeholder="Digite um item para Lista A"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   onClick={addItemA}
@@ -305,9 +345,9 @@ function App() {
               </div>
 
               {/* Área de itens da Lista A */}
-              <div className="border border-gray-200 rounded-lg h-48 overflow-y-auto mb-4">
+              <div ref={listARef} className="border border-gray-200 dark:border-gray-700 rounded-lg h-48 overflow-y-auto mb-4">
                 {listA.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
                     Nenhum item adicionado
                   </div>
                 ) : (
@@ -329,8 +369,8 @@ function App() {
 
           {/* Lista B */}
           <div className="flex-1 max-w-md">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold text-center mb-4 text-blue-600">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-center mb-4 text-blue-600 dark:text-blue-400">
                 Lista B ({listB.length} itens)
               </h2>
 
@@ -342,7 +382,7 @@ function App() {
                   onChange={(e) => setNewItemB(e.target.value)}
                   onKeyPress={handleKeyPressB}
                   placeholder="Digite um item para Lista B"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
                   onClick={addItemB}
@@ -353,9 +393,9 @@ function App() {
               </div>
 
               {/* Área de itens da Lista B */}
-              <div className="border border-gray-200 rounded-lg h-48 overflow-y-auto mb-4">
+              <div ref={listBRef} className="border border-gray-200 dark:border-gray-700 rounded-lg h-48 overflow-y-auto mb-4">
                 {listB.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-500">
+                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
                     Nenhum item adicionado
                   </div>
                 ) : (
@@ -395,18 +435,18 @@ function App() {
         {/* Resultados */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Itens Iguais */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="font-semibold text-lg mb-3 text-green-600">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 className="font-semibold text-lg mb-3 text-green-600 dark:text-green-400">
               ✅ Itens Iguais ({results.common.length})
             </h3>
             <div className="flex flex-wrap gap-2">
               {results.common.length === 0 ? (
-                <span className="text-gray-500 text-sm">Nenhum item em comum</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">Nenhum item em comum</span>
               ) : (
                 results.common.map((item, index) => (
                   <span
                     key={index}
-                    className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm"
+                    className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 px-3 py-1 rounded-full text-sm"
                   >
                     {item}
                   </span>
@@ -416,18 +456,18 @@ function App() {
           </div>
 
           {/* Adicionar (apenas na Lista A) */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="font-semibold text-lg mb-3 text-yellow-600">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 className="font-semibold text-lg mb-3 text-yellow-600 dark:text-yellow-400">
               ➕ Adicionar ({results.onlyInA.length})
             </h3>
             <div className="flex flex-wrap gap-2">
               {results.onlyInA.length === 0 ? (
-                <span className="text-gray-500 text-sm">Nenhum item exclusivo</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">Nenhum item exclusivo</span>
               ) : (
                 results.onlyInA.map((item, index) => (
                   <span
                     key={index}
-                    className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm"
+                    className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 px-3 py-1 rounded-full text-sm"
                   >
                     {item}
                   </span>
@@ -437,18 +477,18 @@ function App() {
           </div>
 
           {/* Excluir (apenas na Lista B) */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="font-semibold text-lg mb-3 text-red-600">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 className="font-semibold text-lg mb-3 text-red-600 dark:text-red-400">
               ❌ Excluir ({results.onlyInB.length})
             </h3>
             <div className="flex flex-wrap gap-2">
               {results.onlyInB.length === 0 ? (
-                <span className="text-gray-500 text-sm">Nenhum item exclusivo</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">Nenhum item exclusivo</span>
               ) : (
                 results.onlyInB.map((item, index) => (
                   <span
                     key={index}
-                    className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm"
+                    className="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 px-3 py-1 rounded-full text-sm"
                   >
                     {item}
                   </span>
@@ -458,18 +498,18 @@ function App() {
           </div>
 
           {/* Repetidos Lista A */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="font-semibold text-lg mb-3 text-purple-600">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 className="font-semibold text-lg mb-3 text-purple-600 dark:text-purple-400">
               🔄 Repetidos Lista A ({results.repeatedInA.length})
             </h3>
             <div className="flex flex-wrap gap-2">
               {results.repeatedInA.length === 0 ? (
-                <span className="text-gray-500 text-sm">Nenhum item repetido</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">Nenhum item repetido</span>
               ) : (
                 results.repeatedInA.map((item, index) => (
                   <span
                     key={index}
-                    className="bg-purple-100 text-purple-800 px-3 py-1 rounded-full text-sm"
+                    className="bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 px-3 py-1 rounded-full text-sm"
                   >
                     {item}
                   </span>
@@ -479,18 +519,18 @@ function App() {
           </div>
 
           {/* Repetidos Lista B */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="font-semibold text-lg mb-3 text-indigo-600">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h3 className="font-semibold text-lg mb-3 text-indigo-600 dark:text-indigo-400">
               🔄 Repetidos Lista B ({results.repeatedInB.length})
             </h3>
             <div className="flex flex-wrap gap-2">
               {results.repeatedInB.length === 0 ? (
-                <span className="text-gray-500 text-sm">Nenhum item repetido</span>
+                <span className="text-gray-500 dark:text-gray-400 text-sm">Nenhum item repetido</span>
               ) : (
                 results.repeatedInB.map((item, index) => (
                   <span
                     key={index}
-                    className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm"
+                    className="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300 px-3 py-1 rounded-full text-sm"
                   >
                     {item}
                   </span>
