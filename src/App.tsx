@@ -1,9 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { normalizeText, parseClientesCsv, type ClienteCsvRow } from './utils/csv';
 
 // Definindo tipos TypeScript
 type ListItem = {
   id: string;
   value: string;
+  status?: string;
+};
+
+type ComparisonMode = 'lacre' | 'cliente';
+
+const statusBadgeClasses = (status: string) => {
+  const normalized = normalizeText(status);
+
+  if (normalized.includes('inativo')) {
+    return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
+  }
+  if (normalized.includes('ativo')) {
+    return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300';
+  }
+  return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
 };
 
 type ComparisonResults = {
@@ -15,10 +31,15 @@ type ComparisonResults = {
 };
 
 function App() {
+  const [mode, setMode] = useState<ComparisonMode>('lacre');
   const [listA, setListA] = useState<ListItem[]>([]);
   const [listB, setListB] = useState<ListItem[]>([]);
   const [newItemA, setNewItemA] = useState('');
   const [newItemB, setNewItemB] = useState('');
+  const [boxName, setBoxName] = useState('');
+  const [csvRows, setCsvRows] = useState<ClienteCsvRow[]>([]);
+  const [csvFileName, setCsvFileName] = useState('');
+  const [csvError, setCsvError] = useState('');
   const [results, setResults] = useState<ComparisonResults>({
     common: [],
     onlyInA: [],
@@ -36,6 +57,42 @@ function App() {
   const listARef = useRef<HTMLDivElement>(null);
   const listBRef = useRef<HTMLDivElement>(null);
 
+  const clienteMatches = useMemo(() => {
+    const target = normalizeText(boxName);
+    if (!target) return [];
+
+    const normalizedRows = csvRows.map(row => ({ row, info: normalizeText(row.infoPgto) }));
+    const exactMatches = normalizedRows.filter(({ info }) => info === target);
+
+    if (exactMatches.length > 0) {
+      return exactMatches.map(({ row }) => row);
+    }
+
+    return normalizedRows
+      .filter(({ info }) => info.includes(target))
+      .map(({ row }) => row);
+  }, [csvRows, boxName]);
+
+  const boxOptions = useMemo(
+    () =>
+      Array.from(new Set(csvRows.map(row => row.infoPgto).filter(value => value !== ''))).sort((a, b) =>
+        a.localeCompare(b, 'pt-BR')
+      ),
+    [csvRows]
+  );
+
+  const clienteListB = useMemo<ListItem[]>(
+    () =>
+      clienteMatches.map((row, index) => ({
+        id: `csv-${index}`,
+        value: row.codCliente,
+        status: row.status,
+      })),
+    [clienteMatches]
+  );
+
+  const effectiveListB = mode === 'cliente' ? clienteListB : listB;
+
   useEffect(() => {
     if (listARef.current) {
       listARef.current.scrollTop = listARef.current.scrollHeight;
@@ -46,7 +103,7 @@ function App() {
     if (listBRef.current) {
       listBRef.current.scrollTop = listBRef.current.scrollHeight;
     }
-  }, [listB.length]);
+  }, [effectiveListB.length]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -95,6 +152,55 @@ function App() {
     if (e.key === 'Enter') {
       addItemB();
     }
+  };
+
+  // Função para lidar com o upload do CSV no modo Cliente
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+
+    if (!file) return;
+
+    setCsvFileName(file.name);
+    setCsvError('');
+
+    try {
+      const buffer = await file.arrayBuffer();
+      let text = new TextDecoder('utf-8').decode(buffer);
+
+      if (text.includes('\uFFFD')) {
+        text = new TextDecoder('windows-1252').decode(buffer);
+      }
+
+      const rows = parseClientesCsv(text);
+
+      if (rows.length === 0) {
+        setCsvRows([]);
+        setCsvError('Nenhum Cód Cliente encontrado no arquivo.');
+        return;
+      }
+
+      setCsvRows(rows);
+    } catch {
+      setCsvRows([]);
+      setCsvError('Não foi possível ler o arquivo CSV.');
+    }
+  };
+
+  // Função para alternar entre os modos Lacre e Cliente
+  const changeMode = (nextMode: ComparisonMode) => {
+    if (nextMode === mode) return;
+
+    setMode(nextMode);
+    setSelectedItem(null);
+    setEditingItem(null);
+    setResults({
+      common: [],
+      onlyInA: [],
+      onlyInB: [],
+      repeatedInA: [],
+      repeatedInB: []
+    });
   };
 
   // Função para selecionar um item
@@ -152,7 +258,7 @@ function App() {
   // Função para calcular as comparações
   const compareLists = () => {
     const valuesA = listA.map(item => item.value);
-    const valuesB = listB.map(item => item.value);
+    const valuesB = effectiveListB.map(item => item.value);
 
     // Itens comuns
     const common = valuesA.filter(value => valuesB.includes(value));
@@ -212,6 +318,12 @@ function App() {
   const clearAll = () => {
     setListA([]);
     setListB([]);
+    setNewItemA('');
+    setNewItemB('');
+    setBoxName('');
+    setCsvRows([]);
+    setCsvFileName('');
+    setCsvError('');
     setSelectedItem(null);
     setEditingItem(null);
     setResults({
@@ -224,9 +336,9 @@ function App() {
   };
 
   // Componente para renderizar cada item da lista
-  const renderListItem = (item: ListItem, index: number, list: 'A' | 'B') => {
-    const isSelected = selectedItem?.list === list && selectedItem?.id === item.id;
-    const isEditing = editingItem?.list === list && editingItem?.id === item.id;
+  const renderListItem = (item: ListItem, index: number, list: 'A' | 'B', readOnly = false) => {
+    const isSelected = !readOnly && selectedItem?.list === list && selectedItem?.id === item.id;
+    const isEditing = !readOnly && editingItem?.list === list && editingItem?.id === item.id;
 
     if (isEditing) {
       return (
@@ -259,12 +371,17 @@ function App() {
     return (
       <div
         key={item.id}
-        className={`flex items-center justify-between py-2 px-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+        className={`flex items-center justify-between py-2 px-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${readOnly ? '' : 'cursor-pointer'} ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30' : readOnly ? '' : 'hover:bg-gray-50 dark:hover:bg-gray-700'
           }`}
-        onClick={() => handleSelectItem(list, item.id)}
+        onClick={readOnly ? undefined : () => handleSelectItem(list, item.id)}
       >
         <span className="flex-1">{item.value}</span>
         <div className="flex items-center gap-2">
+          {item.status && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusBadgeClasses(item.status)}`}>
+              {item.status}
+            </span>
+          )}
           <span className="text-sm text-gray-500 dark:text-gray-400">#{index + 1}</span>
           {isSelected && (
             <div className="flex gap-1 ml-2">
@@ -317,6 +434,112 @@ function App() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Seletor de modo */}
+        <div className="flex justify-center mb-8">
+          <div className="inline-flex gap-1 rounded-lg bg-gray-200 dark:bg-gray-800 p-1">
+            <button
+              onClick={() => changeMode('lacre')}
+              aria-pressed={mode === 'lacre'}
+              className={`px-5 py-2 rounded-md text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                mode === 'lacre'
+                  ? 'bg-white text-blue-600 shadow dark:bg-gray-600 dark:text-white'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+              }`}
+            >
+              🔒 Lacre
+            </button>
+            <button
+              onClick={() => changeMode('cliente')}
+              aria-pressed={mode === 'cliente'}
+              className={`px-5 py-2 rounded-md text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                mode === 'cliente'
+                  ? 'bg-white text-blue-600 shadow dark:bg-gray-600 dark:text-white'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+              }`}
+            >
+              👤 Cliente
+            </button>
+          </div>
+        </div>
+
+        {/* Importação do CSV no modo Cliente */}
+        {mode === 'cliente' && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
+            <h2 className="text-xl font-semibold mb-4 text-blue-600 dark:text-blue-400">
+              Importar Cliente
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="box-name" className="block text-sm font-medium mb-1">
+                  Nome da caixa
+                </label>
+                <input
+                  id="box-name"
+                  type="text"
+                  value={boxName}
+                  onChange={(e) => setBoxName(e.target.value)}
+                  placeholder="Digite o nome da caixa"
+                  list="box-options"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <datalist id="box-options">
+                  {boxOptions.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  A lista será filtrada pelo campo "Informações pgto" da planilha.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="csv-file" className="block text-sm font-medium mb-1">
+                  Planilha CSV
+                </label>
+                <input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleFileUpload}
+                  onClick={(e) => {
+                    e.currentTarget.value = '';
+                  }}
+                  className="block w-full text-sm text-gray-700 dark:text-gray-200 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-500 file:text-white hover:file:bg-blue-600"
+                />
+                {csvFileName && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {csvFileName} — {csvRows.length} registro(s) carregado(s)
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {csvError && (
+              <p className="mt-3 text-sm text-red-600 dark:text-red-400">{csvError}</p>
+            )}
+
+            {!csvError && boxName.trim() !== '' && csvRows.length > 0 && (
+              <p
+                className={`mt-3 text-sm font-medium ${
+                  clienteMatches.length > 0
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-yellow-600 dark:text-yellow-400'
+                }`}
+              >
+                {clienteMatches.length} Cód Cliente encontrado(s) para a caixa "{boxName.trim()}".
+              </p>
+            )}
+
+            {!csvError && boxName.trim() !== '' && csvRows.length > 0 && clienteMatches.length === 0 && boxOptions.length > 0 && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Caixas encontradas no CSV: {boxOptions.slice(0, 8).join(', ')}
+                {boxOptions.length > 8 ? '...' : ''}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Listas lado a lado */}
         <div className="flex flex-col md:flex-row gap-8 justify-center mb-8">
           {/* Lista A */}
@@ -333,7 +556,7 @@ function App() {
                   value={newItemA}
                   onChange={(e) => setNewItemA(e.target.value)}
                   onKeyPress={handleKeyPressA}
-                  placeholder="Digite um item para Lista A"
+                  placeholder={mode === 'cliente' ? 'Digite o Cód Cliente' : 'Digite um item para Lista A'}
                   className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button
@@ -371,47 +594,74 @@ function App() {
           <div className="flex-1 max-w-md">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold text-center mb-4 text-blue-600 dark:text-blue-400">
-                Lista B ({listB.length} itens)
+                Lista B ({effectiveListB.length} itens)
               </h2>
 
-              {/* Input para adicionar item na Lista B */}
-              <div className="flex mb-4">
-                <input
-                  type="text"
-                  value={newItemB}
-                  onChange={(e) => setNewItemB(e.target.value)}
-                  onKeyPress={handleKeyPressB}
-                  placeholder="Digite um item para Lista B"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  onClick={addItemB}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-r-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  Adicionar
-                </button>
-              </div>
-
-              {/* Área de itens da Lista B */}
-              <div ref={listBRef} className="border border-gray-200 dark:border-gray-700 rounded-lg h-48 overflow-y-auto mb-4">
-                {listB.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                    Nenhum item adicionado
+              {mode === 'lacre' ? (
+                <>
+                  {/* Input para adicionar item na Lista B */}
+                  <div className="flex mb-4">
+                    <input
+                      type="text"
+                      value={newItemB}
+                      onChange={(e) => setNewItemB(e.target.value)}
+                      onKeyPress={handleKeyPressB}
+                      placeholder="Digite um item para Lista B"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={addItemB}
+                      className="bg-blue-500 text-white px-4 py-2 rounded-r-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      Adicionar
+                    </button>
                   </div>
-                ) : (
-                  <div>
-                    {listB.map((item, index) => renderListItem(item, index, 'B'))}
-                  </div>
-                )}
-              </div>
 
-              {/* Botão Limpar Lista B */}
-              <button
-                onClick={clearListB}
-                className="w-full bg-orange-500 text-white py-2 px-4 rounded-lg hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500"
-              >
-                Limpar Lista B
-              </button>
+                  {/* Área de itens da Lista B */}
+                  <div ref={listBRef} className="border border-gray-200 dark:border-gray-700 rounded-lg h-48 overflow-y-auto mb-4">
+                    {listB.length === 0 ? (
+                      <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                        Nenhum item adicionado
+                      </div>
+                    ) : (
+                      <div>
+                        {listB.map((item, index) => renderListItem(item, index, 'B'))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botão Limpar Lista B */}
+                  <button
+                    onClick={clearListB}
+                    className="w-full bg-orange-500 text-white py-2 px-4 rounded-lg hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    Limpar Lista B
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* Lista B preenchida automaticamente pelo CSV */}
+                  <div className="mb-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-sm text-blue-700 dark:text-blue-300">
+                    Preenchida automaticamente pelos Cód Cliente da caixa informada.
+                  </div>
+
+                  <div ref={listBRef} className="border border-gray-200 dark:border-gray-700 rounded-lg h-48 overflow-y-auto">
+                    {clienteListB.length === 0 ? (
+                      <div className="flex items-center justify-center h-full px-4 text-center text-gray-500 dark:text-gray-400">
+                        {boxName.trim() === ''
+                          ? 'Informe o nome da caixa'
+                          : csvRows.length === 0
+                            ? 'Importe uma planilha CSV'
+                            : 'Nenhum Cód Cliente encontrado para esta caixa'}
+                      </div>
+                    ) : (
+                      <div>
+                        {clienteListB.map((item, index) => renderListItem(item, index, 'B', true))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
